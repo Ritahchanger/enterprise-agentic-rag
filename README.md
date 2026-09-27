@@ -44,7 +44,7 @@ enterprise-agentic-rag/
 ├── tests/                   # pytest unit + graph tests
 ├── notebooks/               # evaluation notebook
 ├── requirements.txt
-├── .env.example
+├── .env.example           # template for .env (copy and fill in keys)
 └── app.py                   # Streamlit entrypoint
 ```
 
@@ -59,9 +59,24 @@ enterprise-agentic-rag/
 
 ## Setup
 
+### Prerequisites
+
+- **Python 3.12**
+- **System packages for OCR / scanned PDFs:** Tesseract and Poppler
+
+```bash
+# Ubuntu / Debian
+sudo apt install tesseract-ocr poppler-utils
+# macOS
+brew install tesseract poppler
+```
+
+- A **Groq API key** — get one free at https://console.groq.com
+
 ### 1. Clone & configure environment
 
 ```bash
+git clone https://github.com/Ritahchanger/enterprise-agentic-rag.git
 cd enterprise-agentic-rag
 cp .env.example .env
 ```
@@ -69,20 +84,21 @@ cp .env.example .env
 Edit `.env` and set:
 
 ```
-GROQ_API_KEY=your_groq_api_key_here      # https://console.groq.com
-HF_TOKEN=your_huggingface_token_here     # https://huggingface.co/settings/tokens (optional)
+GROQ_API_KEY=your_groq_api_key_here      # required
+HF_TOKEN=your_huggingface_token_here     # optional, higher HF download rate limits
 ```
 
-`CHROMA_PERSIST_DIRECTORY` and `CHROMA_COLLECTION_NAME` already have sensible local defaults — no changes needed there.
+Everything else in `.env.example` already has working local defaults.
 
-> **Security note:** never commit a real `.env` file or paste real API keys into shared files/chats. If a key has ever been exposed, rotate it immediately from the provider's dashboard.
+> **Security note:** `.env` is git-ignored — never commit it or paste real API keys into shared files/chats. If a key has ever been exposed, rotate it immediately from the provider's dashboard.
 
 ### 2. Create a virtual environment & install dependencies
 
 ```bash
-python -m venv venv
-source venv/bin/activate        # Windows: venv\Scripts\activate
+python3 -m venv env
+source env/bin/activate        # Windows: env\Scripts\activate
 pip install -r requirements.txt
+python -m spacy download en_core_web_lg   # NLP model used by Presidio PII redaction
 ```
 
 ### 3. Run the Streamlit app
@@ -91,7 +107,9 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-Open the URL Streamlit prints (default `http://localhost:8501`). That's it — Chroma persists its index under `data/chroma_db/` automatically, no separate database process to start or stop.
+Open http://localhost:8501. Chroma persists its index under `data/chroma_db/` automatically — no separate database process to start or stop.
+
+On first run the app downloads the embedding model (`all-MiniLM-L6-v2`) and the reranker (`cross-encoder/ms-marco-MiniLM-L-6-v2`) from Hugging Face, so the first query/ingest takes a little longer.
 
 ### 4. (Optional) Run the FastAPI API instead of / alongside Streamlit
 
@@ -99,7 +117,14 @@ Open the URL Streamlit prints (default `http://localhost:8501`). That's it — C
 uvicorn app.main:app --reload
 ```
 
-API docs at `http://localhost:8000/docs`.
+| Endpoint | Description |
+|---|---|
+| `GET /api/health` | Health check |
+| `POST /api/query` | Ask a question through the agentic pipeline |
+| `POST /api/ingest` | Ingest documents into the vector store |
+| `GET /metrics` | Prometheus metrics |
+
+Interactive API docs at http://localhost:8000/docs.
 
 ## Usage
 
@@ -138,14 +163,23 @@ It will be recreated automatically the next time you ingest a document.
 
 ## Environment variables reference
 
-| Variable | Description |
-|---|---|
-| `GROQ_API_KEY` | API key for Groq (serves the open-source 20B LLM) |
-| `GROQ_MODEL_NAME` | Model name on Groq, default `openai/gpt-oss-20b` |
-| `HF_TOKEN` | HuggingFace token for embedding model downloads (optional) |
-| `EMBEDDING_MODEL_NAME` | Default `sentence-transformers/all-MiniLM-L6-v2` |
-| `CHROMA_PERSIST_DIRECTORY` | Local on-disk path for the Chroma index, default `./data/chroma_db` |
-| `CHROMA_COLLECTION_NAME` | Chroma collection name, default `enterprise_documents` |
+All settings are loaded from `.env` (see `src/config/settings.py`); only `GROQ_API_KEY` is required.
+
+| Variable | Description | Default |
+|---|---|---|
+| `GROQ_API_KEY` | API key for Groq (serves the open-source 20B LLM) | — (required) |
+| `GROQ_MODEL_NAME` | Model name on Groq | `openai/gpt-oss-20b` |
+| `HF_TOKEN` | HuggingFace token for model downloads (optional) | — |
+| `EMBEDDING_MODEL_NAME` | Sentence-transformers embedding model | `sentence-transformers/all-MiniLM-L6-v2` |
+| `CHROMA_PERSIST_DIRECTORY` | Local on-disk path for the Chroma index | `./data/chroma_db` |
+| `CHROMA_COLLECTION_NAME` | Chroma collection name | `enterprise_documents` |
+| `APP_ENV` | Environment name | `development` |
+| `API_HOST` / `API_PORT` | FastAPI bind address | `0.0.0.0` / `8000` |
+| `STREAMLIT_SERVER_PORT` | Streamlit port | `8501` |
+| `LOG_LEVEL` | Logging level | `INFO` |
+| `CHUNK_SIZE` / `CHUNK_OVERLAP` | Chunking parameters (characters) | `800` / `120` |
+| `TOP_K_RETRIEVAL` | Candidates retrieved per sub-query | `8` |
+| `TOP_K_RERANK` | Chunks kept after reranking | `4` |
 
 ## License
 
